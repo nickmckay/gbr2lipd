@@ -145,7 +145,7 @@ L <- purrr::transpose(ts) %>%
   collapseTs(force = TRUE)
 
 L$archiveType <- "Coral"
-L$lipdVersion <- 1.2
+L$lipdVersion <- 1.3
 L$createdBy <- "https://github.com/nickmckay/gbr2lipd"
 L <- initializeChangelog(L)
 
