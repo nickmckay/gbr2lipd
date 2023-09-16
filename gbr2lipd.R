@@ -5,8 +5,9 @@ library(googledrive)
 library(lubridate)
 #get the data we need
 
-metadata <- read_sheet("1sQ80-25GAWPNFGvhdJG3RqRPF1jYzD-ugVftOtUB-ZA")
+#Use updated spreadsheet!
 
+metadata <- read_sheet("1mSQCFYghPU583dEeCkc3-RydMYRbnl2IxbW3QkZHYLc")
 
 translator <- read_sheet("12lj30-Sx-7pioREuuDTIi3wC-wQRJUcZSfKoZZ_v7dw")
 
@@ -45,109 +46,126 @@ nonLipdMeta$dataSetName <- lipdMeta$dataSetName
 #create files one by one
 udsn <- unique(lipdMeta$dataSetName)
 
+D <- list()
+missingDatasets <- c()
+for(tdsn in udsn){
+  #one dataset at a time
+  tlmeta <- filter(lipdMeta,dataSetName == tdsn)
+  tnlmeta <- filter(nonLipdMeta,dataSetName == tdsn)
 
-#one dataset
-
-
-tlmeta <- filter(lipdMeta,dataSetName == tdsn)
-tnlmeta <- filter(nonLipdMeta,dataSetName == tdsn)
-
-
-tdataDl <- googledrive::drive_download(file = allDataFiles$drive_resource[allDataFiles$dataSetName == tdsn],
-                                     path = file.path("data",paste0(tdsn,".csv")),overwrite = TRUE)
-
-#load the data!
-tdata <- read_csv(tdataDl$local_path)
-
-#expected variables
-vars <- str_split(tnlmeta$meths_primaryVariablesList[[1]],pattern = "; ",simplify = TRUE)
-
-nvars <- ncol(tdata) #don't include year here
-
-#initialize ts
-
-ts <- tlmeta
-
-#replicate the rows by the number variables
-while(nvars > nrow(ts)){
-  ts <- bind_rows(ts,tlmeta)
-}
-
-#add in empty conditional rows
-toAdd <- unique(translator$`needs transformation`) %>% na.omit()
-
-for(ta in toAdd){
-  ts[ta] <- NA
-}
-
-#add in empty year and values
-ts$paleoData_values <- NA
-ts$paleoData_longName <- NA
-ts$paleoData_units <- NA
-ts$paleoData_description <- NA
-
-#start building the ts
-ts$paleoData_variableName <- names(tdata)
-
-#fix geo elevation
-ts$geo_elevation <- as.numeric(ts$geo_elevation)
-
-#deal with the conditional assignments
-for(v in 1:length(ts$paleoData_variableName)){
-  thisVar <- ts$paleoData_variableName[v]
-
-  rtr <- which(translator$if_var == thisVar)
-  if(length(rtr) > 0){#plug the name
-   trtr <- translator$`needs transformation`[rtr]
-   gbrVar <- translator$`GBR Name`[rtr]
-   for(g in 1:length(rtr)){
-     ts[[trtr[g]]][v] <- tnlmeta[[gbrVar[g]]][[1]]
-   }
+  if(!tdsn %in% allDataFiles$dataSetName){
+    missingDatasets <- c(missingDatasets,tdsn)
+    next
   }
 
-  #assign number
-  ts$paleoData_number <- v
+  if(file.exists(file.path("data",paste0(tdsn,".csv")))){
+    tdata <- read_csv(file.path("data",paste0(tdsn,".csv")))
+  }else{
+    tdataDl <- try(googledrive::drive_download(file = allDataFiles$drive_resource[allDataFiles$dataSetName == tdsn],
+                                               path = file.path("data",paste0(tdsn,".csv")),overwrite = TRUE),silent = TRUE)
+    while(is(tdataDl,"try-error")){#in case it times out
+      tdataDl <- try(googledrive::drive_download(file = allDataFiles$drive_resource[allDataFiles$dataSetName == tdsn],
+                                                 path = file.path("data",paste0(tdsn,".csv")),overwrite = TRUE),silent = TRUE)
+    }
 
-   #assign data values
-  ts$paleoData_values[v] <- list(as.matrix(tdata[,names(tdata) == thisVar]))
-
-  #add in variable metadata
-  tvm <- filter(variableMetadata,gbrName == thisVar)
-
-  if(nrow(tvm) == 1){
-  ts$paleoData_longName[v] <- tvm$longName[[1]]
-  ts$paleoData_units[v] <- tvm$lipdUnits[[1]]
-  ts$paleoData_variableName[v] <- tvm$lipdName[[1]]
-  ts$paleoData_description[v] <- tvm$paleoData_description[[1]]
+    #load the data!
+    tdata <- read_csv(tdataDl$local_path)
   }
 
+  #expected variables
+  vars <- str_split(tnlmeta$meths_primaryVariablesList[[1]],pattern = "; ",simplify = TRUE)
+
+  nvars <- ncol(tdata) #don't include year here
+
+  #initialize ts
+
+  ts <- tlmeta
+
+  #replicate the rows by the number variables
+  while(nvars > nrow(ts)){
+    ts <- bind_rows(ts,tlmeta)
+  }
+
+  #add in empty conditional rows
+  toAdd <- unique(translator$`needs transformation`) %>% na.omit()
+
+  for(ta in toAdd){
+    ts[ta] <- NA
+  }
+
+  #add in empty year and values
+  ts$paleoData_values <- NA
+  ts$paleoData_longName <- NA
+  ts$paleoData_units <- NA
+  ts$paleoData_description <- NA
+
+  #start building the ts
+  ts$paleoData_variableName <- names(tdata)
+
+  #fix geo elevation
+  ts$geo_elevation <- as.numeric(ts$geo_elevation)
+
+  #deal with the conditional assignments
+  for(v in 1:length(ts$paleoData_variableName)){
+    thisVar <- ts$paleoData_variableName[v]
+
+    rtr <- which(translator$if_var == thisVar)
+    if(length(rtr) > 0){#plug the name
+      trtr <- translator$`needs transformation`[rtr]
+      gbrVar <- translator$`GBR Name`[rtr]
+      for(g in 1:length(rtr)){
+        ts[[trtr[g]]][v] <- tnlmeta[[gbrVar[g]]][[1]]
+      }
+    }
+
+    #assign number
+    ts$paleoData_number <- v
+
+    #assign data values
+    ts$paleoData_values[v] <- list(as.matrix(tdata[,names(tdata) == thisVar]))
+
+    #add in variable metadata
+    tvm <- filter(variableMetadata,gbrName == thisVar)
+
+    if(nrow(tvm) == 1){
+      ts$paleoData_longName[v] <- tvm$longName[[1]]
+      ts$paleoData_units[v] <- tvm$lipdUnits[[1]]
+      ts$paleoData_variableName[v] <- tvm$lipdName[[1]]
+      ts$paleoData_description[v] <- tvm$paleoData_description[[1]]
+    }
+
+  }
+
+  ##deal with specials in qc sheet later
+
+
+  #assign TSid
+  ts$paleoData_TSid <- paste0("gbr2lipd",ts$dataSetName,ts$paleoData_variableName) #make sure this is unique, but it makes it reproducible
+
+  if(any(duplicated(ts$paleoData_TSid))){
+    stop("duplicated TSids. Fix this.")
+  }
+
+  ts$datasetId <- ts$dataSetName
+
+
+  L <- purrr::transpose(ts) %>%
+    collapseTs(force = TRUE)
+
+  L$archiveType <- "Coral"
+  L$lipdVersion <- 1.3
+  L$createdBy <- "https://github.com/nickmckay/gbr2lipd"
+  L <- initializeChangelog(L)
+
+  D[[L$dataSetName]] <- L
 }
 
-##deal with specials
+res <- map_lgl(D,validLipd)
 
+writeLipd(D,path = "lipd/")
 
-#is anomaly
-#is this true for all datasets?
+#create a lipd TS tibble to check out the metadata:
 
-#alt measurement metadata
+tsTib <- extractTs(D) %>% ts2tibble()
 
-#assign TSid
-ts$paleoData_TSid <- paste0("gbr2lipd",ts$dataSetName,ts$paleoData_variableName) #make sure this is unique, but it makes it reproducible
-
-if(any(duplicated(ts$paleoData_TSid))){
-  stop("duplicated TSids. Fix this.")
-}
-
-ts$datasetId <- ts$dataSetName
-
-
-L <- purrr::transpose(ts) %>%
-  collapseTs(force = TRUE)
-
-L$archiveType <- "Coral"
-L$lipdVersion <- 1.3
-L$createdBy <- "https://github.com/nickmckay/gbr2lipd"
-L <- initializeChangelog(L)
-
-validLipd(L)
 
