@@ -7,7 +7,7 @@ library(lubridate)
 
 #Use updated spreadsheet!
 
-metadata <- read_sheet("1mSQCFYghPU583dEeCkc3-RydMYRbnl2IxbW3QkZHYLc")
+metadata <- read_sheet("1mSQCFYghPU583dEeCkc3-RydMYRbnl2IxbW3QkZHYLc", na = "NA")
 
 translator <- read_sheet("12lj30-Sx-7pioREuuDTIi3wC-wQRJUcZSfKoZZ_v7dw")
 
